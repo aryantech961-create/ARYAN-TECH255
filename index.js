@@ -1,6 +1,6 @@
 /**
- * Aryan-X Bot - A WhatsApp Bot
- * © 2025 supreme
+ * Aryan-X ulutra - A WhatsApp Bot
+ * © 2025 aryan
  */
 
 // --- Environment Setup ---
@@ -176,7 +176,7 @@ function cleanupJunkFiles(botSocket) {
 
 // ── Bot globals ────────────────────────────────────────────────────────────────
 
-global.botname   = 'ARYAN-X';
+global.botname   = 'ARYAN-X ulutra';
 global.themeemoji = '•';
 
 // ── Readline ───────────────────────────────────────────────────────────────────
@@ -762,7 +762,7 @@ _app.get('/', (req, res) => {
     if (fs.existsSync(serverHtml)) {
         res.sendFile(serverHtml);
     } else {
-        res.send('<h1>ARYAN-X WhatsApp Bot is running ✅</h1>');
+        res.send('<h1>ARYAN-X ulutra WhatsApp Bot is running ✅</h1>');
     }
 });
 
