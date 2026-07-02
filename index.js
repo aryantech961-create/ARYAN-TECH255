@@ -282,7 +282,7 @@ async function downloadSessionData() {
 
         const decoded = Buffer.from(base64, 'base64');
         await fs.promises.writeFile(credsPath, decoded);
-        log(`✅ Session decoded and saved to ${credsPath}`, 'green');
+        log(`✅ Session decoded and saved`, 'green');
     } catch (err) {
         log(`Error decoding session data: ${err.message}`, 'red', true);
         throw err;
