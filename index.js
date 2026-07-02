@@ -1,22 +1,16 @@
 /**
- * Aryan x Bot - A WhatsApp Bot
+ * Aryan-X Bot - A WhatsApp Bot
  * © 2025 supreme
- * * NOTE: This is the combined codebase. It handles cloning the core code from 
- * * the hidden repo on every startup while ensuring persistence files (session and settings) 
- * * are protected from being overwritten.
  */
 
 // --- Environment Setup ---
-const config = require('./config');
-/*━━━━━━━━━━━━━━━━━━━━*/
 require('dotenv').config(); // CRITICAL: Load .env variables first
 
-const fs = require('fs')
-const chalk = require('chalk')
-const path = require('path')
-const axios = require('axios')
-const os = require('os')
-const PhoneNumber = require('awesome-phonenumber')
+const fs      = require('fs');
+const chalk   = require('chalk');
+const path    = require('path');
+const axios   = require('axios');
+const os      = require('os');
 
 const {
     default: makeWASocket,
@@ -25,66 +19,61 @@ const {
     fetchLatestBaileysVersion,
     jidNormalizedUser,
     makeCacheableSignalKeyStore,
-    delay 
-} = require("@whiskeysockets/baileys")
+    delay,
+} = require('@whiskeysockets/baileys');
 
-const NodeCache = require("node-cache")
-const pino = require("pino")
-const readline = require("readline")
-const { rmSync } = require('fs')
+const NodeCache  = require('node-cache');
+const pino       = require('pino');
+const readline   = require('readline');
+const { rmSync } = require('fs');
 
-// --- 🌟 NEW: Centralized Logging Function
-
-/**
- * Custom logging function to enforce the [ ∆RY∆N - X ] prefix and styling.
- * @param {string} message - The message to log.
- * @param {string} [color='white'] - The chalk color (e.g., 'green', 'red', 'yellow').
- * @param {boolean} [isError=false] - Whether to use console.error.
- */
+// ── Logging ────────────────────────────────────────────────────────────────────
 
 function log(message, color = 'white', isError = false) {
-    const prefix = chalk.magenta.bold('[ ARYAN - X ]');
+    const prefix  = chalk.magenta.bold('[ ARYAN-X ]');
     const logFunc = isError ? console.error : console.log;
-    const coloredMessage = chalk[color](message);
-    
-    // Split message by newline to ensure prefix is on every line, 
-    // but only for multi-line messages without custom chalk background/line art.
+    const colored = chalk[color] ? chalk[color](message) : message;
     if (message.includes('\n') || message.includes('════')) {
-        logFunc(prefix, coloredMessage);
+        logFunc(prefix, colored);
     } else {
-         logFunc(`${prefix} ${coloredMessage}`);
+        logFunc(`${prefix} ${colored}`);
     }
 }
-// -------------------------------------------
 
+// ── Global flags ───────────────────────────────────────────────────────────────
 
-// --- GLOBAL FLAGS ---
-global.isBotConnected = false; 
+global.isBotConnected        = false;
 global.connectDebounceTimeout = null;
-// --- NEW: Error State Management ---
-global.errorRetryCount = 0; // The in-memory counter for 408 errors in the active process
+global.errorRetryCount       = 0;
 
-// ***************************************************************
-// *** DEPENDENCIES MOVED DOWN HERE (AFTER THE CLONING IS COMPLETE) ***
-// ***************************************************************
+// ── Deferred requires (loaded after core files are confirmed present) ──────────
 
-// We will redefine these variables and requires inside the tylor function
 let smsg, handleMessages, handleGroupParticipantUpdate, handleStatus, store, settings;
 
-// --- 🔒 MESSAGE/ERROR STORAGE CONFIGURATION & HELPERS ---
+// ── Paths ──────────────────────────────────────────────────────────────────────
+
+const sessionDir = path.join(__dirname, 'session');
+const credsPath  = path.join(sessionDir, 'creds.json');
+const loginFile  = path.join(sessionDir, 'login.json');
+const envPath    = path.join(process.cwd(), '.env');
+
+// ── Session ID constants ───────────────────────────────────────────────────────
+
+const SESSION_PREFIX = 'Aryan-X:~';
+
+// ── Message backup ─────────────────────────────────────────────────────────────
+
 const MESSAGE_STORE_FILE = path.join(__dirname, 'message_backup.json');
-// --- NEW: Error Counter File ---
 const SESSION_ERROR_FILE = path.join(__dirname, 'sessionErrorCount.json');
 global.messageBackup = {};
 
 function loadStoredMessages() {
     try {
         if (fs.existsSync(MESSAGE_STORE_FILE)) {
-            const data = fs.readFileSync(MESSAGE_STORE_FILE, 'utf-8');
-            return JSON.parse(data);
+            return JSON.parse(fs.readFileSync(MESSAGE_STORE_FILE, 'utf-8'));
         }
-    } catch (error) {
-        log(`Error loading message backup store: ${error.message}`, 'red', true);
+    } catch (e) {
+        log(`Error loading message backup: ${e.message}`, 'red', true);
     }
     return {};
 }
@@ -92,31 +81,31 @@ function loadStoredMessages() {
 function saveStoredMessages(data) {
     try {
         fs.writeFileSync(MESSAGE_STORE_FILE, JSON.stringify(data, null, 2));
-    } catch (error) {
-        log(`Error saving message backup store: ${error.message}`, 'red', true);
+    } catch (e) {
+        log(`Error saving message backup: ${e.message}`, 'red', true);
     }
 }
+
 global.messageBackup = loadStoredMessages();
 
-// --- NEW: Error Counter Helpers ---
+// ── Error counter helpers ──────────────────────────────────────────────────────
+
 function loadErrorCount() {
     try {
         if (fs.existsSync(SESSION_ERROR_FILE)) {
-            const data = fs.readFileSync(SESSION_ERROR_FILE, 'utf-8');
-            return JSON.parse(data);
+            return JSON.parse(fs.readFileSync(SESSION_ERROR_FILE, 'utf-8'));
         }
-    } catch (error) {
-        log(`Error loading session error count: ${error.message}`, 'red', true);
+    } catch (e) {
+        log(`Error loading error count: ${e.message}`, 'red', true);
     }
-    // Structure: { count: number, last_error_timestamp: number (epoch) }
     return { count: 0, last_error_timestamp: 0 };
 }
 
 function saveErrorCount(data) {
     try {
         fs.writeFileSync(SESSION_ERROR_FILE, JSON.stringify(data, null, 2));
-    } catch (error) {
-        log(`Error saving session error count: ${error.message}`, 'red', true);
+    } catch (e) {
+        log(`Error saving error count: ${e.message}`, 'red', true);
     }
 }
 
@@ -124,109 +113,83 @@ function deleteErrorCountFile() {
     try {
         if (fs.existsSync(SESSION_ERROR_FILE)) {
             fs.unlinkSync(SESSION_ERROR_FILE);
-            log('✅ Deleted sessionErrorCount.json.', 'red');
+            log('✅ Deleted sessionErrorCount.json.', 'green');
         }
     } catch (e) {
         log(`Failed to delete sessionErrorCount.json: ${e.message}`, 'red', true);
     }
 }
 
-
-// --- ♻️ CLEANUP FUNCTIONS ---
-
-/**
- * NEW: Helper function to centralize the cleanup of all session-related files.
- */
+// ── Cleanup helpers ────────────────────────────────────────────────────────────
 
 function clearSessionFiles() {
     try {
         log('[ CLEARING ] session folder...', 'blue');
-        // Delete the entire session directory
         rmSync(sessionDir, { recursive: true, force: true });
-        // Delete login file if it exists
         if (fs.existsSync(loginFile)) fs.unlinkSync(loginFile);
-        // Delete error count file
         deleteErrorCountFile();
-        global.errorRetryCount = 0; // Reset in-memory counter
+        global.errorRetryCount = 0;
         log('[ SESSION ] files cleaned successfully.', 'green');
     } catch (e) {
         log(`Failed to clear session files: ${e.message}`, 'red', true);
     }
 }
 
-
 function cleanupOldMessages() {
-    let storedMessages = loadStoredMessages();
-    let now = Math.floor(Date.now() / 1000);
-    const maxMessageAge = 24 * 60 * 60;
-    let cleanedMessages = {};
-    for (let chatId in storedMessages) {
-        let newChatMessages = {};
-        for (let messageId in storedMessages[chatId]) {
-            let message = storedMessages[chatId][messageId];
-            if (now - message.timestamp <= maxMessageAge) {
-                newChatMessages[messageId] = message; 
+    let stored = loadStoredMessages();
+    const now         = Math.floor(Date.now() / 1000);
+    const maxAge      = 24 * 60 * 60;
+    let cleaned       = {};
+    for (let chatId in stored) {
+        let newChat = {};
+        for (let msgId in stored[chatId]) {
+            if (now - stored[chatId][msgId].timestamp <= maxAge) {
+                newChat[msgId] = stored[chatId][msgId];
             }
         }
-        if (Object.keys(newChatMessages).length > 0) {
-            cleanedMessages[chatId] = newChatMessages; 
-        }
+        if (Object.keys(newChat).length > 0) cleaned[chatId] = newChat;
     }
-    saveStoredMessages(cleanedMessages);
-    log("[ MSG CLEANUP ] Old messages removed  🧹", 'green');
+    saveStoredMessages(cleaned);
+    log('[ MSG CLEANUP ] Old messages removed 🧹', 'green');
 }
 
 function cleanupJunkFiles(botSocket) {
-    let directoryPath = path.join(); 
-    fs.readdir(directoryPath, async function (err, files) {
+    const directoryPath = path.join();
+    fs.readdir(directoryPath, async (err, files) => {
         if (err) return log(`[Junk Cleanup] Error reading directory: ${err}`, 'red', true);
-        const filteredArray = files.filter(item =>
-            item.endsWith(".gif") || item.endsWith(".png") || item.endsWith(".mp3") ||
-            item.endsWith(".mp4") || item.endsWith(".opus") || item.endsWith(".jpg") ||
-            item.endsWith(".webp") || item.endsWith(".webm") || item.endsWith(".zip")
-        );
-        if (filteredArray.length > 0) {
-            let teks = `Detected ${filteredArray.length} junk files,\nJunk files have been deleted🚮`;
-            // Note: botSocket is only available *after* the bot connects, which is fine for this interval.
-            if (botSocket && botSocket.user && botSocket.user.id) {
-                botSocket.sendMessage(botSocket.user.id.split(':')[0] + '@s.whatsapp.net', { text: teks });
+        const exts = ['.gif','.png','.mp3','.mp4','.opus','.jpg','.webp','.webm','.zip'];
+        const junk = files.filter(f => exts.some(e => f.endsWith(e)));
+        if (junk.length > 0) {
+            if (botSocket?.user?.id) {
+                botSocket.sendMessage(
+                    botSocket.user.id.split(':')[0] + '@s.whatsapp.net',
+                    { text: `Detected ${junk.length} junk files — deleted 🚮` }
+                );
             }
-            filteredArray.forEach(function (file) {
-                const filePath = path.join(directoryPath, file);
-                try {
-                    if(fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                } catch(e) {
-                    log(`[Junk Cleanup] Failed to delete file ${file}: ${e.message}`, 'red', true);
-                }
+            junk.forEach(file => {
+                try { fs.unlinkSync(path.join(directoryPath, file)); } catch (e) {}
             });
-            log(`[Junk Cleanup] ${filteredArray.length} files deleted.`, 'yellow');
+            log(`[Junk Cleanup] ${junk.length} files deleted.`, 'yellow');
         }
     });
 }
 
-// --- JUNE MD ORIGINAL CODE START ---
-global.botname = "∆RYAN X"
-global.themeemoji = "•"
-const pairingCode = !!global.phoneNumber || process.argv.includes("--pairing-code")
-const useMobile = process.argv.includes("--mobile")
+// ── Bot globals ────────────────────────────────────────────────────────────────
 
-// --- Readline setup (∆RYAN MD) ---
-const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
-// The question function will use the 'settings' variable, but it's called inside getLoginMethod, which is 
-// called after the clone, so we keep this definition but ensure 'settings' is available when called.
-const question = (text) => rl ? new Promise(resolve => rl.question(text, resolve)) : Promise.resolve(settings?.ownerNumber || global.phoneNumber)
+global.botname   = 'ARYAN-X';
+global.themeemoji = '•';
 
-/*━━━━━━━━━━━━━━━━━━━━*/
-// --- Paths (ARYAN MD) ---
-/*━━━━━━━━━━━━━━━━━━━━*/
-const sessionDir = path.join(__dirname, 'session')
-const credsPath = path.join(sessionDir, 'creds.json')
-const loginFile = path.join(sessionDir, 'login.json')
-const envPath = path.join(process.cwd(), '.env');
+// ── Readline ───────────────────────────────────────────────────────────────────
 
-/*━━━━━━━━━━━━━━━━━━━━*/
-// --- Login persistence (ARYAN MD) ---
-/*━━━━━━━━━━━━━━━━━━━━*/
+const rl       = process.stdin.isTTY
+    ? readline.createInterface({ input: process.stdin, output: process.stdout })
+    : null;
+const question = (text) =>
+    rl
+        ? new Promise(resolve => rl.question(text, resolve))
+        : Promise.resolve(process.env.OWNER_NUMBER || '');
+
+// ── Login persistence ──────────────────────────────────────────────────────────
 
 async function saveLoginMethod(method) {
     await fs.promises.mkdir(sessionDir, { recursive: true });
@@ -241,631 +204,556 @@ async function getLastLoginMethod() {
     return null;
 }
 
-// --- Session check (ARYAN MD) ---
 function sessionExists() {
     return fs.existsSync(credsPath);
 }
 
-// --- NEW: Check and use SESSION_ID from .env/environment variables ---
-async function checkEnvSession() {
-    const envSessionID = process.env.SESSION_ID;
-    if (envSessionID) {
-        if (!envSessionID.includes("Aryan-X:~")) { 
-            log("🚨 WARNING: Environment SESSION_ID is missing the required prefix 'ARYAN-X:~'. Assuming BASE64 format.", 'red'); 
-        }
-        global.SESSION_ID = envSessionID.trim();
-        return true;
-    }
-    return false;
+// ── SESSION_ID detection & validation ─────────────────────────────────────────
+//
+//  Rules:
+//   • Prefix must be exactly  Aryan-X:~
+//   • Everything after the prefix is a base64-encoded creds.json
+//   • Works from .env file, Heroku config vars, Render env vars, etc.
+//   • Detection is case-sensitive to avoid false matches
+
+function getRawSessionId() {
+    // Trim whitespace and any stray quotes that hosting panels sometimes add
+    return (process.env.SESSION_ID || '').trim().replace(/^["']|["']$/g, '');
 }
 
-/**
- * NEW LOGIC: Checks if SESSION_ID starts with "Aryan x". If not, cleans .env and restarts.
- */
+function isValidSessionId(id) {
+    return typeof id === 'string' && id.startsWith(SESSION_PREFIX) && id.length > SESSION_PREFIX.length + 10;
+}
+
+// ── Validate & clean bad SESSION_ID in .env ───────────────────────────────────
+
 async function checkAndHandleSessionFormat() {
-    const sessionId = process.env.SESSION_ID;
-    
-    if (sessionId && sessionId.trim() !== '') {
-        // Only check if it's set and non-empty
-        if (!sessionId.trim().startsWith('Aryan-X')) {
-            log(chalk.white.bgRed('[ERROR]: Invalid SESSION_ID in .env'), 'white');
-            log(chalk.white.bgRed('[SESSION ID] MUST start with "Aryan-x".'), 'white');
-            log(chalk.white.bgRed('Cleaning .env and creating new one...'), 'white');
-            
-         try {
-                let envContent = fs.readFileSync(envPath, 'utf8');
-                
-                // Use regex to replace only the SESSION_ID line while preserving other variables
-                envContent = envContent.replace(/^SESSION_ID=.*$/m, 'SESSION_ID=');
-                
-                fs.writeFileSync(envPath, envContent);
-                log('✅ Cleaned SESSION_ID entry in .env file.', 'green');
-                log('Please add a proper session ID and restart the bot.', 'yellow');
+    const raw = getRawSessionId();
+
+    // Nothing set — that's fine, we'll fall through to stored session / interactive login
+    if (!raw) return;
+
+    if (!isValidSessionId(raw)) {
+        log(chalk.white.bgRed(`[ERROR] Invalid SESSION_ID detected.`), 'white');
+        log(chalk.white.bgRed(`SESSION_ID MUST start with "${SESSION_PREFIX}"`), 'white');
+        log(chalk.white.bgRed(`Current value starts with: "${raw.slice(0, 20)}..."`), 'white');
+
+        // Clean only the .env file on disk — env vars injected by Heroku/Render
+        // are read-only, so we skip the file write if it doesn't exist locally.
+        if (fs.existsSync(envPath)) {
+            try {
+                let content = fs.readFileSync(envPath, 'utf8');
+                content = content.replace(/^SESSION_ID=.*$/m, 'SESSION_ID=');
+                fs.writeFileSync(envPath, content);
+                log('✅ Cleared bad SESSION_ID from .env file.', 'green');
             } catch (e) {
-                log(`Failed to modify .env file. Please check permissions: ${e.message}`, 'red', true);
+                log(`Could not clean .env file: ${e.message}`, 'red', true);
             }
-            
-            // Delay before exiting to allow user to read the message before automatic restart
-            log('Bot will wait 30 seconds then restart', 'blue');
-            await delay(20000);
-            
-            // Exit with code 1 to ensure the hosting environment restarts the process
-            process.exit(1);
         }
+
+        log('Please set a valid SESSION_ID and restart.', 'yellow');
+        log('Bot will exit in 20 seconds...', 'blue');
+        await delay(20000);
+        process.exit(1);
     }
 }
 
+// ── Download / decode session from SESSION_ID ─────────────────────────────────
 
-// --- Get login method (ARYAN X) ---
+async function downloadSessionData() {
+    try {
+        await fs.promises.mkdir(sessionDir, { recursive: true });
+
+        if (fs.existsSync(credsPath)) {
+            log('creds.json already present — skipping decode.', 'blue');
+            return;
+        }
+
+        const id = global.SESSION_ID || getRawSessionId();
+        if (!id) {
+            log('No SESSION_ID to decode.', 'yellow');
+            return;
+        }
+
+        // Strip the prefix then decode
+        const base64 = id.startsWith(SESSION_PREFIX)
+            ? id.slice(SESSION_PREFIX.length)
+            : id;
+
+        const decoded = Buffer.from(base64, 'base64');
+        await fs.promises.writeFile(credsPath, decoded);
+        log(`✅ Session decoded and saved to ${credsPath}`, 'green');
+    } catch (err) {
+        log(`Error decoding session data: ${err.message}`, 'red', true);
+        throw err;
+    }
+}
+
+// ── Pairing code ───────────────────────────────────────────────────────────────
+
+async function requestPairingCode(socket) {
+    try {
+        log('Waiting 3 seconds before requesting pairing code...', 'yellow');
+        await delay(3000);
+        let code = await socket.requestPairingCode(global.phoneNumber);
+        code = code?.match(/.{1,4}/g)?.join('-') || code;
+        log(chalk.bgGreen.black(`\nYour Pairing Code: ${code}\n`), 'white');
+        log(`
+Open WhatsApp → Settings → Linked Devices → Link a Device
+Enter the code shown above.
+        `, 'blue');
+        return true;
+    } catch (err) {
+        log(`Failed to get pairing code: ${err.message}`, 'red', true);
+        return false;
+    }
+}
+
+// ── Interactive login menu ─────────────────────────────────────────────────────
+
 async function getLoginMethod() {
     const lastMethod = await getLastLoginMethod();
     if (lastMethod && sessionExists()) {
-        log(`Last login method detected: ${lastMethod}. Using it automatically.`, 'blue');
+        log(`Resuming previous login method: ${lastMethod}`, 'blue');
         return lastMethod;
     }
-    
+
     if (!sessionExists() && fs.existsSync(loginFile)) {
-        log(`Session files missing. Removing old login preference for clean re-login.`, 'blue');
+        log('Session missing — removing stale login preference.', 'blue');
         fs.unlinkSync(loginFile);
     }
 
-    // Interactive prompt for Pterodactyl/local
+    // Non-TTY environments (Heroku dynos, Render, etc.) can't do interactive login
     if (!process.stdin.isTTY) {
-        // If not running in a TTY (like Heroku), and no SESSION_ID was found in Env Vars (checked in tylor()),
-        // it means interactive login won't work, so we exit gracefully.
-        log("❌ No Session ID found in environment variables.", 'red');
+        log('❌ No valid SESSION_ID in environment and no stored session. Cannot login non-interactively.', 'red');
+        log(`Set SESSION_ID=${SESSION_PREFIX}<base64> in your environment config and restart.`, 'yellow');
         process.exit(1);
     }
 
+    log(' Choose login method:', 'blue');
+    log(' 1] WhatsApp Number (Pairing Code)', 'blue');
+    log(' 2] Paste Session ID', 'blue');
 
-    log(" Choose login method:", 'blue');
-    log(" 1] ENTER WhatsApp Number [Pairing Code]", 'blue');
-    log(" 2] ENTER Paste Session ID [Use session]", 'blue');
-
-    let choice = await question("Enter option number (1 or 2): ");
-    choice = choice.trim();
+    let choice = (await question('Enter option (1 or 2): ')).trim();
 
     if (choice === '1') {
-        let phone = await question(chalk.bgBlack(chalk.greenBright(`Enter your WhatsApp number (e.g., 255772336513): `)));
-        phone = phone.replace(/[^0-9]/g, '');
+        let phone = await question(chalk.bgBlack(chalk.greenBright('Enter your WhatsApp number (e.g. 254700000000): ')));
+        phone = phone.replace(/\D/g, '');
         const pn = require('awesome-phonenumber');
-        if (!pn('+' + phone).isValid()) { log('Invalid phone number.', 'red'); return getLoginMethod(); }
+        if (!pn('+' + phone).isValid()) {
+            log('Invalid phone number. Try again.', 'red');
+            return getLoginMethod();
+        }
         global.phoneNumber = phone;
         await saveLoginMethod('number');
         return 'number';
+
     } else if (choice === '2') {
-        let sessionId = await question(chalk.bgBlack(chalk.greenBright(`Paste your Session ID here: `)));
-        sessionId = sessionId.trim();
-        // Pre-check the format during interactive entry as well
-        if (!sessionId.includes("JUNE-MD:~")) { 
-            log("Invalid Session ID format! Must contain 'JUNE-MD:~'.", 'red'); 
-            process.exit(1); 
+        let sessionId = (await question(chalk.bgBlack(chalk.greenBright('Paste your Session ID: ')))).trim();
+        if (!isValidSessionId(sessionId)) {
+            log(`Invalid Session ID. Must start with "${SESSION_PREFIX}"`, 'red');
+            process.exit(1);
         }
         global.SESSION_ID = sessionId;
         await saveLoginMethod('session');
         return 'session';
+
     } else {
-        log("Invalid option! Please choose 1 or 2.", 'red');
+        log('Invalid option. Choose 1 or 2.', 'red');
         return getLoginMethod();
     }
 }
 
-// --- Download session (ARYAN X) ---
-async function downloadSessionData() {
-    try {
-        await fs.promises.mkdir(sessionDir, { recursive: true });
-        if (!fs.existsSync(credsPath) && global.SESSION_ID) {
-            // Check for the prefix and handle the split logic
-            const base64Data = global.SESSION_ID.includes("ARYAN-MD:~") ? global.SESSION_ID.split("ARYAN-MD:~")[1] : global.SESSION_ID;
-            const sessionData = Buffer.from(base64Data, 'base64');
-            await fs.promises.writeFile(credsPath, sessionData);
-            log(`Session successfully saved.`, 'green');
-        }
-    } catch (err) { log(`Error downloading session data: ${err.message}`, 'red', true); }
-}
+// ── Welcome message ────────────────────────────────────────────────────────────
 
-// --- Request pairing code (ARYAN MD) ---
-async function requestPairingCode(socket) {
-    try {
-        log("Waiting 3 seconds for socket stabilization before requesting pairing code...", 'yellow');
-        await delay(3000); 
-
-        let code = await socket.requestPairingCode(global.phoneNumber);
-        code = code?.match(/.{1,4}/g)?.join("-") || code;
-        log(chalk.bgGreen.black(`\nYour Pairing Code: ${code}\n`), 'white');
-        log(`
-Please enter this code in WhatsApp app:
-1. Open WhatsApp
-2. Go to Settings => Linked Devices
-3. Tap "Link a Device"
-4. Enter the code shown above
-        `, 'blue');
-        return true; 
-    } catch (err) { 
-        log(`Failed to get pairing code: ${err.message}`, 'red', true); 
-        return false; 
-    }
-}
-
-// --- Dedicated function to handle post-connection initialization and welcome message
 async function sendWelcomeMessage(XeonBotInc) {
-    // Safety check: Only proceed if the welcome message hasn't been sent yet in this session.
-    if (global.isBotConnected) return; 
-    
-    // CRITICAL: Wait 10 seconds for the connection to fully stabilize
-    await delay(10000); 
+    if (global.isBotConnected) return;
+    await delay(10000); // Wait for connection to fully stabilise
 
-    //detectPlatform
- const detectPlatform = () => {
-  if (process.env.DYNO) return "☁️ Heroku";
-  if (process.env.RENDER) return "⚡ Render";
-  if (process.env.PREFIX && process.env.PREFIX.includes("termux")) return "📱 Termux";
-  if (process.env.PORTS && process.env.CYPHERX_HOST_ID) return "🌀 CypherX Platform";
-  if (process.env.P_SERVER_UUID) return "🖥️ Panel";
-  if (process.env.LXC) return "📦 Linux Container (LXC)";
-  
-  switch (os.platform()) {
-    case "win32": return "🪟 Windows";
-    case "darwin": return "🍎 macOS";
-    case "linux": return "🐧 Linux";
-    default: return "❓ Unknown";
-  }
-};
-
-    const hostName = detectPlatform();
-    
+    const detectPlatform = () => {
+        if (process.env.DYNO)                                  return '☁️ Heroku';
+        if (process.env.RENDER)                                return '⚡ Render';
+        if (process.env.CYCLIC_URL)                            return '🔄 Cyclic';
+        if (process.env.RAILWAY_STATIC_URL)                    return '🚂 Railway';
+        if (process.env.P_SERVER_UUID)                         return '🖥️ Panel (Pterodactyl)';
+        if (process.env.LXC)                                   return '📦 LXC Container';
+        if (process.env.PREFIX?.includes('termux'))            return '📱 Termux';
+        switch (os.platform()) {
+            case 'win32':  return '🪟 Windows';
+            case 'darwin': return '🍎 macOS';
+            case 'linux':  return '🐧 Linux';
+            default:       return '❓ Unknown';
+        }
+    };
 
     try {
-
-        const { getPrefix, handleSetPrefixCommand } = require('./commands/setprefix');
+        const { getPrefix } = require('./commands/setprefix');
         if (!XeonBotInc.user || global.isBotConnected) return;
 
         global.isBotConnected = true;
-        const pNumber = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
-        let data = JSON.parse(fs.readFileSync('./data/messageCount.json'));
-        const currentMode = data.isPublic ? 'public' : 'private';           
-        const prefix = getPrefix() || '.';
 
-        // Send the message
+        const pNumber     = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
+        const data        = JSON.parse(fs.readFileSync('./data/messageCount.json'));
+        const currentMode = data.isPublic ? 'public' : 'private';
+        const prefix      = getPrefix() || '.';
+        const platform    = detectPlatform();
+
         await XeonBotInc.sendMessage(pNumber, {
-            text: `
-┏━━━━━✧ CONNECTED ✧━━━━━━━
-┃✧ Prefix: [ ${prefix} ]
-┃✧ mode: ${currentMode}
-┃✧ Platform: ${hostName}
-┃✧ Bot: ∆RY∆N-X
-┃✧ Status: Active
-┃✧ Time: ${new Date().toLocaleString()}
-┃✧ Telegram: t.me/Aryan x
-┃✧ Group: t.me/Aryan x 
+            text:
+`┏━━━━━✧ CONNECTED ✧━━━━━━━
+┃✧ Prefix:   [ ${prefix} ]
+┃✧ Mode:     ${currentMode}
+┃✧ Platform: ${platform}
+┃✧ Bot:      ARYAN-X
+┃✧ Status:   Active ✅
+┃✧ Time:     ${new Date().toLocaleString()}
+┃✧ Telegram: t.me/Aryan_x
 ┗━━━━━━━━━━━━━━━━━━━━━`
         });
-        log('[ BOT ] successfully connected.', 'blue');
-        
-        const newsletters = ["120363410585103502@newsletter", ""];
-        global.newsletters = newsletters;
-        for (let i = 0; i < newsletters.length; i++) {
-            try {
-                await XeonBotInc.newsletterFollow(newsletters[i]);
-               console.log(chalk.blue(`✅ Auto-followed newsletter successfully`));
-            } catch (e) {
-                if (e.message?.includes('already') || e.message?.includes('conflict') || e.message?.includes('unexpected')) {
-                } else {
-                  //  console.log(chalk.red(`🚫 Newsletter ${i + 1} follow failed: ${e.message}`));
-                }
-            }
+
+        log('[ BOT ] Successfully connected.', 'blue');
+
+        // Auto-follow newsletters
+        const newsletters = ['120363410585103502@newsletter'];
+        for (const nl of newsletters) {
+            try { await XeonBotInc.newsletterFollow(nl); } catch (_) {}
         }
 
-        const groupInvites = ["D9gQKGVxLr32ZcdIPLYaLX?s=cl&p=a&mlu=0", ""];
-        global.groupInvites = groupInvites;
-        for (let i = 0; i < groupInvites.length; i++) {
-            try {
-                await XeonBotInc.groupAcceptInvite(groupInvites[i]);
-                console.log(chalk.green(`✅ Auto-joined group successfully`));
-            } catch (e) {
-                if (e.message?.includes('conflict') || e.message?.includes('already')) {
-                   // console.log(chalk.green(`✅ Group ${i + 1}: Already joined`));
-                } else {
-                  //  console.log(chalk.red(`🚫 Group ${i + 1} join failed: ${e.message}`));
-                }
-            }
+        // Auto-join groups
+        const groupInvites = ['D9gQKGVxLr32ZcdIPLYaLX?s=cl&p=a&mlu=0'];
+        for (const inv of groupInvites) {
+            try { await XeonBotInc.groupAcceptInvite(inv); } catch (_) {}
         }
 
-                    
-
-        // NEW: Reset the error counter on successful connection
+        // Reset error counter on successful connection
         deleteErrorCountFile();
         global.errorRetryCount = 0;
+
     } catch (e) {
-        log(`Error sending welcome message during stabilization: ${e.message}`, 'red', true);
+        log(`Error sending welcome message: ${e.message}`, 'red', true);
         global.isBotConnected = false;
     }
 }
 
-/**
- * NEW FUNCTION: Handles the logic for persistent 408 (timeout) errors.
- * @param {number} statusCode The disconnect status code.
- */
+// ── 408 timeout handler ────────────────────────────────────────────────────────
+
 async function handle408Error(statusCode) {
-    // Only proceed for 408 Timeout errors
     if (statusCode !== DisconnectReason.connectionTimeout) return false;
-    
+
     global.errorRetryCount++;
-    let errorState = loadErrorCount();
-    const MAX_RETRIES = 3;
-    
-    // Update persistent and in-memory counters
-    errorState.count = global.errorRetryCount;
+    const MAX_RETRIES  = 3;
+    const errorState   = loadErrorCount();
+    errorState.count   = global.errorRetryCount;
     errorState.last_error_timestamp = Date.now();
     saveErrorCount(errorState);
 
-    log(`Connection Timeout (408) detected. Retry count: ${global.errorRetryCount}/${MAX_RETRIES}`, 'yellow');
-    
-    if (global.errorRetryCount >= MAX_RETRIES) {
-        log(chalk.white.bgRed(`[MAX CONNECTION TIMEOUTS] (${MAX_RETRIES}) REACHED IN ACTIVE STATE. `), 'white');
-        log(chalk.white.bgRed('This indicates a persistent network or session issue.'), 'white');
-        log(chalk.white.bgRed('Exiting process to stop infinite restart loop.'), 'white');
+    log(`Connection timeout (408). Retry ${global.errorRetryCount}/${MAX_RETRIES}`, 'yellow');
 
+    if (global.errorRetryCount >= MAX_RETRIES) {
+        log(chalk.white.bgRed(`[MAX TIMEOUTS] ${MAX_RETRIES} reached. Exiting to stop restart loop.`), 'white');
         deleteErrorCountFile();
-        global.errorRetryCount = 0; // Reset in-memory counter
-        
-        // Force exit to prevent a restart loop, user must intervene (Pterodactyl/Heroku)
-        await delay(5000); // Give time for logs to print
+        global.errorRetryCount = 0;
+        await delay(5000);
         process.exit(1);
     }
+
     return true;
 }
 
+// ── Session integrity check ────────────────────────────────────────────────────
 
-// --- Start bot (ARYAN MD) ---
+async function checkSessionIntegrityAndClean() {
+    const folderExists  = fs.existsSync(sessionDir);
+    const credsExists   = sessionExists();
+
+    if (folderExists && !credsExists) {
+        log('[ DETECTED ] Incomplete session files on startup.', 'red');
+        log('[ CLEANING ] Removing junk session folder...', 'yellow');
+        clearSessionFiles();
+        log('Cleanup done. Waiting 3 seconds...', 'yellow');
+        await delay(3000);
+    }
+}
+
+// ── .env file watcher ─────────────────────────────────────────────────────────
+
+function checkEnvStatus() {
+    // Only watch if the .env file actually exists on disk
+    // (Heroku/Render inject env vars directly — no .env file)
+    if (!fs.existsSync(envPath)) {
+        log('No local .env file found — skipping file watcher (normal for Heroku/Render).', 'blue');
+        return;
+    }
+
+    try {
+        log('[ WATCHER ] Watching .env for changes...', 'green');
+        fs.watch(envPath, { persistent: false }, (eventType, filename) => {
+            if (filename && eventType === 'change') {
+                log(chalk.white.bgRed('[ENV] .env file changed — restarting to apply new config...'), 'white');
+                process.exit(1);
+            }
+        });
+    } catch (e) {
+        log(`Failed to set up .env watcher: ${e.message}`, 'red', true);
+    }
+}
+
+// ── Main bot socket ────────────────────────────────────────────────────────────
+
 async function startXeonBotInc() {
     log('Connecting to WhatsApp...', 'cyan');
+
     const { version } = await fetchLatestBaileysVersion();
-    
-    // Ensure session directory exists before Baileys attempts to use it
     await fs.promises.mkdir(sessionDir, { recursive: true });
 
-    const { state, saveCreds } = await useMultiFileAuthState(`./session`);
+    const { state, saveCreds } = await useMultiFileAuthState('./session');
     const msgRetryCounterCache = new NodeCache();
 
     const XeonBotInc = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, 
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        printQRInTerminal: false,
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
         auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+            keys:  makeCacheableSignalKeyStore(
+                state.keys,
+                pino({ level: 'fatal' }).child({ level: 'fatal' })
+            ),
         },
-        markOnlineOnConnect: true,
+        markOnlineOnConnect:         true,
         generateHighQualityLinkPreview: false,
-        syncFullHistory: false,
+        syncFullHistory:             false,
         getMessage: async (key) => {
-            let jid = jidNormalizedUser(key.remoteJid);
-            // This now uses the globally available 'store' which is loaded inside tylor()
-            let msg = await store.loadMessage(jid, key.id); 
-            return msg?.message || "";
+            const jid = jidNormalizedUser(key.remoteJid);
+            const msg = await store.loadMessage(jid, key.id);
+            return msg?.message || '';
         },
-        msgRetryCounterCache
+        msgRetryCounterCache,
     });
 
     store.bind(XeonBotInc.ev);
 
-    // --- 🚨 MESSAGE LOGGER ---
+    // ── Message logger + handler ───────────────────────────────────────────────
     XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
-        // (Omitted message logger logic for brevity)
         for (const msg of chatUpdate.messages) {
-              if (!msg.message) continue;
-              let chatId = msg.key.remoteJid;
-              let messageId = msg.key.id;
-              if (!global.messageBackup[chatId]) { global.messageBackup[chatId] = {}; }
-              let textMessage = msg.message?.conversation || msg.message?.extendedTextMessage?.text || null;
-              if (!textMessage) continue;
-              let savedMessage = { sender: msg.key.participant || msg.key.remoteJid, text: textMessage, timestamp: msg.messageTimestamp };
-              if (!global.messageBackup[chatId][messageId]) { global.messageBackup[chatId][messageId] = savedMessage; saveStoredMessages(global.messageBackup); }
+            if (!msg.message) continue;
+            const chatId    = msg.key.remoteJid;
+            const messageId = msg.key.id;
+            if (!global.messageBackup[chatId]) global.messageBackup[chatId] = {};
+            const text = msg.message?.conversation ||
+                         msg.message?.extendedTextMessage?.text || null;
+            if (!text) continue;
+            if (!global.messageBackup[chatId][messageId]) {
+                global.messageBackup[chatId][messageId] = {
+                    sender:    msg.key.participant || msg.key.remoteJid,
+                    text,
+                    timestamp: msg.messageTimestamp,
+                };
+                saveStoredMessages(global.messageBackup);
+            }
         }
 
-        // --- ARYAN MD ORIGINAL HANDLER ---
         const mek = chatUpdate.messages[0];
-        // Check for status@broadcast BEFORE the mek.message guard — status
-        // update messages often arrive without a message body and would be
-        // silently dropped by the !mek.message check below.
-        if (mek.key.remoteJid === 'status@broadcast') { await handleStatus(XeonBotInc, chatUpdate); return; }
+        if (mek.key.remoteJid === 'status@broadcast') {
+            await handleStatus(XeonBotInc, chatUpdate);
+            return;
+        }
         if (!mek.message) return;
-        mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message;
-        try { await handleMessages(XeonBotInc, chatUpdate, true) } catch(e){ log(e.message, 'red', true) }
+        mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage')
+            ? mek.message.ephemeralMessage.message
+            : mek.message;
+        try { await handleMessages(XeonBotInc, chatUpdate, true); }
+        catch (e) { log(e.message, 'red', true); }
     });
 
-
-    // --- ⚠️ CONNECTION UPDATE LISTENER (Enhanced Logic with 401/408 handler)
+    // ── Connection update ──────────────────────────────────────────────────────
     XeonBotInc.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (connection === 'close') {
-            global.isBotConnected = false; 
-            
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            // Capture both DisconnectReason.loggedOut (sometimes 401) and explicit 401 error
-            const permanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-            
-            // Log and handle permanent errors (logged out, invalid session)
-            if (permanentLogout) {
-                log(chalk.bgRed.black(`\n💥 Disconnected! Status Code: ${statusCode} [LOGGED OUT].`), 'red');
-                log('🗑️ Deleting session folder...', 'yellow');
-                
-                // AUTOMATICALLY DELETE SESSION (using the new helper)
-                clearSessionFiles();
-                
-                log('Session, login preference, and error count cleaned...','red');
-                log('Initiating full process restart in 5 seconds...', 'blue');
-                await delay(5000);
-                
-                // CRITICAL FIX: Use process.exit(1) to trigger a clean restart by the Daemon
-                process.exit(1); 
-                
-            } else {
-                // NEW: Handle the 408 Timeout Logic FIRST
-                const is408Handled = await handle408Error(statusCode);
-                if (is408Handled) {
-                    // If handle408Error decides to exit, it will already have called process.exit(1)
-                    return;
-                }
+        const { connection, lastDisconnect } = update;
 
-                // This handles all other temporary errors (Stream, Connection, Timeout, etc.)
-                log(`Connection closed due to temporary issue (Status: ${statusCode}). Attempting reconnect...`, 'yellow');
-                // Re-start the whole bot process (this handles temporary errors/reconnects)
-                startXeonBotInc(); 
+        if (connection === 'close') {
+            global.isBotConnected = false;
+
+            const statusCode      = lastDisconnect?.error?.output?.statusCode;
+            const permanentLogout =
+                statusCode === DisconnectReason.loggedOut || statusCode === 401;
+
+            if (permanentLogout) {
+                log(chalk.bgRed.black(`\n💥 Logged out (status ${statusCode}). Clearing session...`), 'red');
+                clearSessionFiles();
+                log('Restarting in 5 seconds...', 'blue');
+                await delay(5000);
+                process.exit(1);
+            } else {
+                const is408 = await handle408Error(statusCode);
+                if (is408) return;
+                log(`Temporary disconnect (status ${statusCode}). Reconnecting...`, 'yellow');
+                startXeonBotInc();
             }
-        } else if (connection === 'open') {           
-            console.log(chalk.yellow(`💅Connected to => ` + JSON.stringify(XeonBotInc.user, null, 2)))
-            log('ARYAN-X CONNECTED', 'yellow');      
-            log(`GITHUB: ARYAN`, 'yellow');
-            
-            // Send the welcome message (which includes the 10s stability delay and error reset)
-     await sendWelcomeMessage(XeonBotInc);
+
+        } else if (connection === 'open') {
+            log('ARYAN-X CONNECTED ✅', 'yellow');
+            await sendWelcomeMessage(XeonBotInc);
         }
     });
 
     XeonBotInc.ev.on('creds.update', saveCreds);
 
     XeonBotInc.ev.on('group-participants.update', async (update) => {
-        try {
-            await handleGroupParticipantUpdate(XeonBotInc, update);
-        } catch (e) {
-            log(`Group participant update error: ${e.message}`, 'red', true);
-        }
+        try { await handleGroupParticipantUpdate(XeonBotInc, update); }
+        catch (e) { log(`Group update error: ${e.message}`, 'red', true); }
     });
 
-    XeonBotInc.public = true;
-    // This relies on smsg being loaded
-    XeonBotInc.serializeM = (m) => smsg(XeonBotInc, m, store); 
+    XeonBotInc.public      = true;
+    XeonBotInc.serializeM  = (m) => smsg(XeonBotInc, m, store);
 
-    // --- ⚙️ BACKGROUND INTERVALS (Cleanup Logic) ---
+    // ── Background intervals ───────────────────────────────────────────────────
 
-    // 1. Session File Cleanup 
+    // 1. Session file cleanup (every 2 hours)
     setInterval(() => {
-        try {
-            const sessionPath = path.join(sessionDir);  
-            if (!fs.existsSync(sessionPath)) return;
-            fs.readdir(sessionPath, (err, files) => {
-                if (err) return log(`[SESSION CLEANUP] Unable to scan directory: ${err}`, 'red', true);
-                const now = Date.now();
-                const filteredArray = files.filter((item) => {
-                    const filePath = path.join(sessionPath, item);
-                    try {
-                        const stats = fs.statSync(filePath);
-                        return ((item.startsWith("pre-key") || item.startsWith("sender-key") || item.startsWith("session-") || item.startsWith("app-state")) &&
-                            item !== 'creds.json' && now - stats.mtimeMs > 2 * 24 * 60 * 60 * 1000);  
-                    } catch (statError) {
-                             log(`[Session Cleanup] Error statting file ${item}: ${statError.message}`, 'red', true);
-                             return false;
-                    }
-                });
-                if (filteredArray.length > 0) {
-                    log(`[Session Cleanup] Found ${filteredArray.length} old session files. Clearing...`, 'yellow');
-                    filteredArray.forEach((file) => {
-                        const filePath = path.join(sessionPath, file);
-                        try { fs.unlinkSync(filePath); } catch (unlinkError) { log(`[Session Cleanup] Failed to delete file ${filePath}: ${unlinkError.message}`, 'red', true); }
-                    });
-                }
+        if (!fs.existsSync(sessionDir)) return;
+        fs.readdir(sessionDir, (err, files) => {
+            if (err) return;
+            const now    = Date.now();
+            const stale  = files.filter(f => {
+                const filePath = path.join(sessionDir, f);
+                try {
+                    const stats = fs.statSync(filePath);
+                    return (
+                        (f.startsWith('pre-key') || f.startsWith('sender-key') ||
+                         f.startsWith('session-') || f.startsWith('app-state')) &&
+                        f !== 'creds.json' &&
+                        now - stats.mtimeMs > 2 * 24 * 60 * 60 * 1000
+                    );
+                } catch (_) { return false; }
             });
-        } catch (error) {
-            log(`[SESSION CLEANUP] Error clearing old session files: ${error.message}`, 'red', true);
-        }
-    }, 7200000); 
+            stale.forEach(f => {
+                try { fs.unlinkSync(path.join(sessionDir, f)); } catch (_) {}
+            });
+            if (stale.length) log(`[Session Cleanup] Removed ${stale.length} old files.`, 'yellow');
+        });
+    }, 7200000);
 
+    // 2. Message store cleanup (every 1 hour)
+    setInterval(cleanupOldMessages, 60 * 60 * 1000);
 
-    // 2. Message Store Cleanup  
-    const cleanupInterval = 60 * 60 * 1000;
-    setInterval(cleanupOldMessages, cleanupInterval);
-
-    // 3. Junk File Cleanup  
-    const junkInterval = 30_000;
-    setInterval(() => cleanupJunkFiles(XeonBotInc), junkInterval); 
+    // 3. Junk file cleanup (every 30 seconds)
+    setInterval(() => cleanupJunkFiles(XeonBotInc), 30_000);
 
     return XeonBotInc;
 }
 
-// --- New Core Integrity Check Function ---
-async function checkSessionIntegrityAndClean() {
-    const isSessionFolderPresent = fs.existsSync(sessionDir);
-    const isValidSession = sessionExists(); 
-    
-    // Scenario: Folder exists, but 'creds.json' is missing (incomplete/junk session)
-    if (isSessionFolderPresent && !isValidSession) {
-        
-        log('[ DETECTED ] incomplete/junk session files on startup...', 'red');
-        log('[ CLEANING ] up before proceeding...', 'yellow');
-        
-        // 1. Delete the entire session folder (junk files, partial state, etc.)
-        clearSessionFiles(); // Use the helper function
-        
-        // 2. Add the requested 3-second delay after cleanup
-        log('Cleanup complete. Waiting 3 seconds for stability...', 'yellow');
-        await delay(3000);
-    }
-}
+// ── Main entry point ───────────────────────────────────────────────────────────
 
-
-// --- 🌟 NEW: .env File Watcher for Automated Restart ---
-/**
- * Monitors the .env file for changes and forces a process restart.
- * Made mandatory to ensure SESSION_ID changes are always picked up.
- * @private 
- */
-function checkEnvStatus() {
-    try {
-        log(` [ WATCHER ] .env... `, 'green');
-        
-        // Use persistent: false for better behavior in some hosting environments
-        // Always set the watcher regardless of the environment
-        fs.watch(envPath, { persistent: false }, (eventType, filename) => {
-            if (filename && eventType === 'change') {
-                log(chalk.bgRed.black('================================================='), 'white');
-                log(chalk.white.bgRed(' [ENV] env file change detected!'), 'white');
-                log(chalk.white.bgRed('Forcing a clean restart to apply new configuration (e.g., SESSION_ID).'), 'white');
-                log(chalk.red.bgBlack('================================================='), 'white');
-                
-                // Use process.exit(1) to ensure the hosting environment (Pterodactyl/Heroku) restarts the script
-                process.exit(1);
-            }
-        });
-    } catch (e) {
-        log(`❌ Failed to set up .env file watcher (fs.watch error): ${e.message}`, 'red', true);
-        // Do not exit, as the bot can still run, but notify the user
-    }
-}
-// -------------------------------------------------------------
-
-
-// --- Main login flow (ARYAN MD) ---
 async function tylor() {
-    
-    // 1. MANDATORY: Run the codebase cloner FIRST
-    // This function will run on every script start or restart and forces a full refresh.
-   // await downloadAndSetupCodebase();
-    
-    // *************************************************************
-    // *** CRITICAL: REQUIRED FILES MUST BE LOADED AFTER CLONING ***
-    // *************************************************************
+
+    // ── Load core modules ──────────────────────────────────────────────────────
     try {
-        // We require settings BEFORE the env check to ensure the file is present
-        // in case the cloning just happened.
-        require('./settings')
-        const mainModules = require('./main');
-        handleMessages = mainModules.handleMessages;
+        require('./settings');
+
+        const mainModules            = require('./main');
+        handleMessages               = mainModules.handleMessages;
         handleGroupParticipantUpdate = mainModules.handleGroupParticipantUpdate;
-        handleStatus = mainModules.handleStatus;
+        handleStatus                 = mainModules.handleStatus;
 
         const myfuncModule = require('./lib/myfunc');
-        smsg = myfuncModule.smsg;
+        smsg               = myfuncModule.smsg;
 
-        store = require('./lib/lightweight_store')
-        store.readFromFile()
-        settings = require('./settings')
-        setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000)
+        store    = require('./lib/lightweight_store');
+        settings = require('./settings');
 
-        log("✨ Core files loaded successfully.", 'green');
+        store.readFromFile();
+        setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000);
+
+        log('✨ Core files loaded.', 'green');
     } catch (e) {
-        log(`FATAL: Failed to load core files after cloning. Check cloned repo structure. ${e.message}`, 'red', true);
+        log(`FATAL: Failed to load core files: ${e.message}`, 'red', true);
         process.exit(1);
     }
-    // *************************************************************
-    
-    // 2. NEW: Check the SESSION_ID format *before* connecting
+
+    // ── Validate SESSION_ID format if set ─────────────────────────────────────
     await checkAndHandleSessionFormat();
-    
-    // 3. Set the global in-memory retry count based on the persistent file, if it exists
+
+    // ── Restore persistent error count ────────────────────────────────────────
     global.errorRetryCount = loadErrorCount().count;
-    log(`Retrieved initial 408 retry count: ${global.errorRetryCount}`, 'yellow');
-    
-    // 4. *** IMPLEMENT USER'S PRIORITY LOGIC: Check .env SESSION_ID FIRST ***
-    const envSessionID = process.env.SESSION_ID?.trim();
+    log(`Initial 408 retry count: ${global.errorRetryCount}`, 'yellow');
 
-    if (envSessionID && envSessionID.startsWith('ARYAN-MD')) { 
-        log("Found new SESSION_ID in environment variable.", 'magenta');
-        
-        // 4a. Force the use of the new session by cleaning any old persistent files.
-        clearSessionFiles(); 
-        
-        // 4b. Set global and download the new session file (creds.json) from the .env value.
+    // ── Priority 1: SESSION_ID from environment (Heroku, Render, .env) ────────
+    const envSessionID = getRawSessionId();
+
+    if (isValidSessionId(envSessionID)) {
+        log(`✅ Valid SESSION_ID found (prefix: ${SESSION_PREFIX}).`, 'magenta');
+
+        // Always start fresh — clear any old stale session
+        clearSessionFiles();
+
         global.SESSION_ID = envSessionID;
-        await downloadSessionData(); 
-        await saveLoginMethod('session'); 
+        await downloadSessionData();
+        await saveLoginMethod('session');
 
-        // 4c. Start bot with the newly created session files
-        log("Valid session found from .env...", 'green');
-        log('Waiting 3 seconds for stable connection...', 'yellow'); 
+        log('Session written. Starting bot in 3 seconds...', 'green');
         await delay(3000);
         await startXeonBotInc();
-        
-        // 4d. Start the file watcher
-        checkEnvStatus(); // <--- START .env FILE WATCHER (Mandatory)
-        
+        checkEnvStatus();
         return;
     }
-    // If environment session is NOT set, or not valid, continue with fallback logic:
-    log("[ALERT] No new SESSION_ID found in .env", 'blue');
-    log("Falling back to stored session....", 'blue');
 
-    // 5. Run the mandatory integrity check and cleanup
+    if (envSessionID && !isValidSessionId(envSessionID)) {
+        // Something is set but wrong format — already handled by checkAndHandleSessionFormat above
+        // but just in case, log it clearly
+        log(`⚠️  SESSION_ID is set but invalid (must start with "${SESSION_PREFIX}"). Ignoring.`, 'red');
+    } else {
+        log('[INFO] No SESSION_ID in environment.', 'blue');
+    }
+
+    // ── Priority 2: Existing stored session ───────────────────────────────────
     await checkSessionIntegrityAndClean();
-    
-    // 6. Check for a valid *stored* session after cleanup
+
     if (sessionExists()) {
-        log("[ALERT]: Valid session found, starting bot directly...", 'green'); 
-        log('[ALERT]: Waiting 3 seconds for stable connection...', 'blue');
+        log('✅ Valid stored session found. Starting bot...', 'green');
         await delay(3000);
         await startXeonBotInc();
-        
-        // 6a. Start the file watcher
-        checkEnvStatus(); // <--- START .env FILE WATCHER (Mandatory)
-        
+        checkEnvStatus();
         return;
     }
-    
-    // 7. New Login Flow (If no valid session exists)
+
+    // ── Priority 3: Interactive login ─────────────────────────────────────────
+    log('No session found. Starting interactive login...', 'blue');
     const loginMethod = await getLoginMethod();
     let XeonBotInc;
 
     if (loginMethod === 'session') {
         await downloadSessionData();
-        // Socket is only created AFTER session data is saved
-        XeonBotInc = await startXeonBotInc(); 
-    } else if (loginMethod === 'number') {
-        // Socket is created BEFORE pairing code is requested
         XeonBotInc = await startXeonBotInc();
-        await requestPairingCode(XeonBotInc); 
+    } else if (loginMethod === 'number') {
+        XeonBotInc = await startXeonBotInc();
+        await requestPairingCode(XeonBotInc);
     } else {
-        log("[ALERT]: Failed to get valid login method.", 'red');
+        log('Failed to get valid login method.', 'red');
         return;
     }
-    
-    // 8. Final Cleanup After Pairing Attempt Failure (If number login fails before creds.json is written)
+
+    // Clean up if number pairing failed before creds.json was written
     if (loginMethod === 'number' && !sessionExists() && fs.existsSync(sessionDir)) {
-        log('[ALERT]: Login interrupted [FAILED]. Clearing temporary session files ...', 'red');
-        log('[ALERT]: Restarting for instance...', 'red');
-        
-        clearSessionFiles(); // Use the helper function
-        
-        // Force an exit to restart the entire login flow cleanly
+        log('Login interrupted — clearing temporary session files.', 'red');
+        clearSessionFiles();
         process.exit(1);
     }
-    
-    // 9. Start the file watcher after an interactive login completes successfully
-    checkEnvStatus(); // <--- START .env FILE WATCHER (Mandatory)
+
+    checkEnvStatus();
 }
 
-// --- Express Web Server ---
-const express = require('express');
-const _app = express();
-const PORT = process.env.PORT || 5000;
+// ── Express web server (Heroku needs a bound port) ────────────────────────────
+
+const express           = require('express');
+const _app              = express();
+const PORT              = process.env.PORT || 5000;
 const SERVER_START_TIME = Date.now();
 
 _app.use((req, res, next) => {
     res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
+    res.set('Pragma',        'no-cache');
+    res.set('Expires',       '0');
     next();
 });
 
@@ -874,25 +762,29 @@ _app.get('/', (req, res) => {
     if (fs.existsSync(serverHtml)) {
         res.sendFile(serverHtml);
     } else {
-        res.send('<h1>ARYAN-X WhatsApp Bot is running</h1>');
+        res.send('<h1>ARYAN-X WhatsApp Bot is running ✅</h1>');
     }
 });
 
 _app.get('/health', (req, res) => {
     res.json({
-        status: 'ok',
-        uptime: process.uptime(),
-        startTime: SERVER_START_TIME,
-        serverTime: Date.now()
+        status:      'ok',
+        uptime:      process.uptime(),
+        connected:   global.isBotConnected,
+        startTime:   SERVER_START_TIME,
+        serverTime:  Date.now(),
+        platform:    process.env.DYNO ? 'heroku' : process.env.RENDER ? 'render' : 'other',
     });
 });
 
+// CRITICAL for Heroku: must listen before tylor() in case of slow startup
 _app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Status page running on http://0.0.0.0:${PORT}`);
+    log(`✅ Web server listening on port ${PORT}`, 'green');
 });
 
-// --- Start bot (JUNE MD) ---
-tylor().catch(err => log(`Fatal error starting bot: ${err.message}`, 'red', true));
-process.on('uncaughtException', (err) => log(`Uncaught Exception: ${err.message}`, 'red', true));
-process.on('unhandledRejection', (err) => log(`Unhandled Rejection: ${err.message}`, 'red', true));
+// ── Boot ───────────────────────────────────────────────────────────────────────
 
+tylor().catch(err => log(`Fatal error starting bot: ${err.message}`, 'red', true));
+
+process.on('uncaughtException',   err => log(`Uncaught Exception: ${err.message}`,   'red', true));
+process.on('unhandledRejection',  err => log(`Unhandled Rejection: ${err?.message}`, 'red', true));
