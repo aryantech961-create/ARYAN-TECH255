@@ -400,7 +400,7 @@ async function helpCommand(sock, chatId, message) {
         // Load thumbnail using helper function
         const thumbnailBuffer = await loadThumbnail(thumbnailPath);
 
-        // Send menu using JUNE-X BOT menu style function
+        // Send menu using ∆RY∆N-X ULUTRA menu style function
         await sendMenuWithStyle(sock, chatId, message, menulist, menuStyle, thumbnailBuffer, pushname);
 
     } catch (error) {
