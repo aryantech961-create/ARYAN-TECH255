@@ -1,19 +1,23 @@
-// help.js - Fixed version
+/**
+- help.js - 
+- Enhanced version with integrated functions
+- supreme + casper
+*/
 const settings = require('../settings');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { getMenuStyle, getMenuSettings, MENU_STYLES } = require('./menuSettings');
 const { generateWAMessageFromContent } = require('@whiskeysockets/baileys');
-const { getPrefix } = require('./setprefix');
-const { getOwnerName } = require('./setowner');
-const { getBotName } = require('./setbot');
-const { applyWatermark } = require('./setwatermark');
-
+const { getPrefix, handleSetPrefixCommand } = require('./setprefix');
+const { getOwnerName, handleSetOwnerCommand } = require('./setowner');
+const setBotNameCommand = require('./setbotname');
+const { getBotName } = require('../lib/botConfig');
 const more = String.fromCharCode(8206);
 const readmore = more.repeat(4001);
 
 // Utility Functions
+const { createFakeContact } = require('../lib/fakeContact');
 function formatTime(seconds) {
     const days = Math.floor(seconds / (24 * 60 * 60));
     seconds = seconds % (24 * 60 * 60);
@@ -31,24 +35,22 @@ function formatTime(seconds) {
     return time.trim();
 }
 
-function detectHost() {
-    const env = process.env;
-
-    if (env.RENDER || env.RENDER_EXTERNAL_URL) return 'Render';
-    if (env.DYNO || env.HEROKU_APP_DIR || env.HEROKU_SLUG_COMMIT) return 'Heroku';
-    if (env.VERCEL || env.VERCEL_ENV || env.VERCEL_URL) return 'Vercel';
-    if (env.PORTS || env.CYPHERX_HOST_ID) return "CypherXHost";
-    if (env.RAILWAY_ENVIRONMENT || env.RAILWAY_PROJECT_ID) return 'Railway';
-    if (env.REPL_ID || env.REPL_SLUG) return 'Replit';
-
-    const hostname = os.hostname().toLowerCase();
-    if (!env.CLOUD_PROVIDER && !env.DYNO && !env.VERCEL && !env.RENDER) {
-        if (hostname.includes('vps') || hostname.includes('server')) return 'VPS';
-        return 'Panel';
-    }
-
-    return 'Unknown Host';
-}
+// Detect host/platform
+const detectPlatform = () => {
+  if (process.env.DYNO) return "☁️ Heroku";
+  if (process.env.RENDER) return "⚡ Render";
+  if (process.env.PREFIX && process.env.PREFIX.includes("termux")) return "📱 Termux";
+  if (process.env.PORTS && process.env.CYPHERX_HOST_ID) return "🌀 CypherX Platform";
+  if (process.env.P_SERVER_UUID) return "🖥️ Panel";
+  if (process.env.LXC) return "📦 Linux Container (LXC)";
+  
+  switch (os.platform()) {
+    case "win32": return "🪟 Windows";
+    case "darwin": return "🍎 macOS";
+    case "linux": return "🐧 Linux";
+    default: return "❓ Unknown";
+  }
+};
 
 // Memory formatting function
 const formatMemory = (memory) => {
@@ -64,149 +66,186 @@ const progressBar = (used, total, size = 10) => {
     return `${bar} ${Math.round((used / total) * 100)}%`;
 };
 
-// Generate Menu Function
+const COMMAND_CATEGORIES = {
+    'OWNER MENU': [
+        'mode', 'autostatus', 'antidelete', 'autoread', 'autotyping',
+        'autoreact', 'areact', 'autoreaction', 'autofont', 'autorecording',
+        'autoboth', 'pmblocker', 'setpp', 'setbio', 'clearsession', 'cleartmp',
+        'sudo', 'setprefix', 'setowner', 'setbotname', 'setmenu', 'restart',
+        'menuimage', 'configimage', 'settings', 'update', 'paircode',
+        'anticall', 'antibot', 'antiedit', 'antistatusmention', 'alwaysonline', 'online',
+        'disp', 'readreciepts', 'settimezone'
+    ],
+    'GROUP ADMIN': [
+        'promote', 'demote', 'kick', 'mute', 'unmute', 'ban', 'unban',
+        'warn', 'warnings', 'add', 'approve', 'join', 'killall',
+        'antilink', 'antibadword', 'antitag', 'antisticker', 'antidemote',
+        'antiimage', 'antimention', 'antipromote', 'welcome', 'goodbye',
+        'setgroupdesc', 'setgname', 'setgpp', 'open', 'close',
+        'resetlink', 'link', 'revoke'
+    ],
+    'GROUP TOOLS': [
+        'tagall', 'tag', 'hidetag', 'tagnoadmin', 'tagnotadmin', 'mention',
+        'groupinfo', 'infogroup', 'admins', 'listadmin', 'listonline',
+        'topmembers', 'leave', 'pair', 'chatbot', 'clear', 'delete',
+        'getpp', 'lastseen', 'drop', 'getgcprofile', 'getgcname',
+        'staff', 'creategroup'
+    ],
+    'AI MENU': [
+        'ai', 'gpt', 'gemini', 'copilot', 'deepseek', 'meta', 'metai',
+        'vision', 'analyse', 'ilama', 'wormgpt', 'birdai', 'blackbox',
+        'perplexity', 'mistral', 'grok', 'speechwrite',
+        'imagine', 'flux', 'dalle', 'sora', 'magicstudio', 'remini', 'gptedit'
+    ],
+    'DOWNLOADER': [
+        'play', 'song', 'video', 'ytplay', 'ytv', 'ytaudio', 'ytvideo',
+        'ytdocplay', 'ytdocvideo', 'spotify',
+        'instagram', 'facebook', 'tiktok', 'xvideo',
+        'mediafire', 'mf', 'apk', 'gitclone',
+        'lyrics', 'whatsong', 'pinterest', 'terabox'
+    ],
+    'SEARCH & TOOLS': [
+        'yts', 'ytsearch', 'img', 'image', 'movie', 'shazam',
+        'fetch', 'ss', 'trt', 'transcribe', 'translate',
+        'locate', 'location', 'url', 'tourl', 'vcf',
+        'ping', 'runtime', 'uptime', 'alive', 'vv', 'vv2',
+        'block', 'unblock', 'allblocklist',
+        'enc', 'viewonce', 'weather', 'news', 'inspect',
+        'botinfo', 'time', 'date', 'chanelid', 'gif'
+    ],
+    'STICKER MENU': [
+        'sticker', 'stickercrop', 'tgsticker', 'take', 'attp', 'emojimix',
+        'meme', 'smeme', 'blur', 'removebg', 'nobg', 'crop', 'simage', 'toimage'
+    ],
+    'CONVERTER': [
+        'totext', 'toimage', 'toaudio', 'tomp3', 'toppt', 'tourl',
+        'tovoicenote', 'trim', 'tts'
+    ],
+    'GAME MENU': [
+        'tictactoe', 'connect4', 'hangman', 'trivia', 'answer',
+        'truth', 'dare', '8ball', 'cf', 'scramble', 'bet'
+    ],
+    'FUN & SOCIAL': [
+        'compliment', 'insult', 'flirt', 'shayari', 'goodnight', 'gn',
+        'roseday', 'lovenight', 'character', 'rate', 'ship', 'simp', 'wasted', 'stupid',
+        'joke', 'quote', 'fact', 'oogway', 'pies', 'say'
+    ],
+    'ANIME MENU': [
+        'neko', 'waifu', 'loli', 'nom', 'poke', 'cry',
+        'kiss', 'pat', 'hug', 'wink', 'facepalm', 'anime', 'animu'
+    ],
+    'TEXT MAKER': [
+        'metallic', 'ice', 'snow', 'impressive', 'matrix', 'light',
+        'neon', 'devil', 'purple', 'thunder', 'leaves', '1917',
+        'arena', 'hacker', 'sand', 'blackpink', 'glitch', 'fire'
+    ],
+    'IMG EDIT': [
+        'heart', 'horny', 'circle', 'lgbt', 'lolice',
+        'namecard', 'tweet', 'ytcomment', 'comrade',
+        'gay', 'glass', 'jail', 'passed', 'triggered'
+    ],
+    'STATUS MENU': [
+        'tostatus', 'savestatus', 'togroupstatus'
+    ],
+    'SPORTS MENU': [
+        'livescore', 'bettips', 'fnews',
+        'player', 'team', 'venue', 'gameevents',
+        'epl', 'laliga', 'ucl', 'bundesliga',
+        'seriea', 'euros', 'fifa'
+    ],
+    'GITHUB': [
+        'git', 'github', 'sc', 'script', 'repo', 'clone'
+    ]
+};
+
 const generateMenu = (pushname, currentMode, hostName, ping, uptimeFormatted, prefix = '.') => {
     const memoryUsage = process.memoryUsage();
     const botUsedMemory = memoryUsage.heapUsed;
     const totalMemory = os.totalmem();
     const systemUsedMemory = totalMemory - os.freemem();
     const prefix2 = getPrefix();
+    const bot = getBotName();
     let newOwner = getOwnerName();
-    let newBot = getBotName();
     const menuSettings = getMenuSettings();
     
-    let menu = `┏❐  *◈ ${newBot} ◈*\n`;
-    menu += `├◆ *Owner:* ${newOwner}\n`;
-    menu += `├◆ *Mode:* ${currentMode}\n`;
-    menu += `├◆ *Host:* ${hostName}\n`;
-    menu += `├◆ *Speed:* ${ping} ms\n`;
-    menu += `├◆ *Prefix:* [${prefix2}]\n`;
+    let menu = `┏━━❐✧ ${bot} ✧❐\n`;
+    menu += `┃✦ Prefix: [${prefix2}]\n`;
+    menu += `┃✦ Owner: ${newOwner}\n`;
+    menu += `┃✦ Mode: ${currentMode}\n`;
+    menu += `┃✦ Platform: ${hostName}\n`;
+    menu += `┃✦ Speed: ${ping} ms\n`;
     
     if (menuSettings.showUptime) {
-        menu += `├◆ *Uptime:* ${uptimeFormatted}\n`;
+        menu += `┃✦ Uptime: ${uptimeFormatted}\n`;
     }
     
-    menu += `├◆ *version:* ${settings.version}\n`;
+    menu += `┃✦ Version: v${settings.version}\n`;
     
     if (menuSettings.showMemory) {
-        menu += `├◆ *Usage:* ${formatMemory(botUsedMemory)} of ${formatMemory(totalMemory)}\n`;
-        menu += `├◆ *RAM:* ${progressBar(systemUsedMemory, totalMemory)}\n`;
+        menu += `┃✦ Usage: ${formatMemory(botUsedMemory)} of ${formatMemory(totalMemory)}\n`;
+        menu += `┃✦ RAM: [${progressBar(systemUsedMemory, totalMemory)}]\n`;
     }
     
     menu += `┗❐\n${readmore}\n`;
 
-    // Owner Menu
-    menu += `┏❐ 《 *OWNER MENU* 》 ❐\n`;
-    menu += `┃├◆ .autoreadreceipts\n┃├◆ .ban\n┃├◆ .block\n┃├◆ .blocklist\n┃├◆ .leave\n┃├◆ .restart\n┃├◆ .unban\n┃├◆ .unblock\n┃├◆.promote\n┃├◆ .delete\n┃├◆ .del\n┃├◆ .demote\n┃├◆ .mute\n┃├◆ .togstatus\n┃├◆ .unmute\n┃├◆ .delete\n┃├◆ .kick\n┃├◆ .kickall\n┃├◆ .warnings\n┃├◆ .antilink\n┃├◆ .antibadword\n┃├◆ .clear\n┃├◆ .chatbot\n`;
-    menu += `┗❐\n\n`;
+    let sectionIndex = 0;
+    for (const [category, commands] of Object.entries(COMMAND_CATEGORIES)) {
+        menu += `┏━━❐ \`${category}\` ❐\n`;
+        for (const cmd of commands) {
+            menu += `┃ ✧ ${cmd}\n`;
+        }
+        menu += `┗❐\n`;
+        sectionIndex++;
+        if (sectionIndex % 3 === 0) {
+            menu += `${readmore}\n`;
+        } else {
+            menu += `\n`;
+        }
+    }
 
-    // Group Menu
-    menu += `┏❐ 《 *GROUP MENU* 》 ❐\n`;
-    menu += `┃├◆ .promote\n┃├◆ .demote\n┃├◆ .groupstatus\n┃├◆ .settings\n┃├◆ .welcome\n┃├◆ .setgpp\n┃├◆ .getgpp\n┃├◆ .listadmin\n┃├◆ .goodbye\n┃├◆ .tagnoadmin\n┃├◆ .tag\n┃├◆ .antilink\n┃├◆ .set welcome\n┃├◆ .listadmin\n┃├◆ .groupinfo\n┃├◆ .admins\n┃├◆ .warn\n┃├◆ .revoke\n┃├◆ .resetlink\n┃├◆ .open\n┃├◆ .close\n┃├◆ .mention\n`;
-    menu += `┗❐\n\n`;
-
-    // AI Menu
-    menu += `┏❐ 《 *AI MENU* 》 ❐\n`;
-    menu += `┃├◆ .Ai\n┃├◆ .gpt\n┃├◆ .gemini\n┃├◆ .imagine\n┃├◆ .flux\n`;
-    menu += `┗❐\n\n`;
-
-    // Setting Menu
-    menu += `┏❐ 《 *SETTING MENU* 》 ❐\n`;
-    menu += `┃├◆ .mode\n┃├◆ .autostatus\n┃├◆ .pmblock\n┃├◆ .setmention\n┃├◆ .autoread\n┃├◆ .clearsession\n┃├◆ .antidelete\n┃├◆ .cleartmp\n┃├◆ .autoreact\n┃├◆ .getpp\n┃├◆ .setpp\n┃├◆ .sudo\n┃├◆ .autotyping\n┃├◆ .setmenuimage\n┃├◆ .changemenu style\n┃├◆ .setprefix\n┃├◆ .setownername\n┃├◆ .setbotname\n┃├◆ .setvar\n┃├◆ .setwatermark\n┃├◆ .setownernumber\n`;
-    menu += `┗❐\n${readmore}\n`;
-
-    // Main Menu
-    menu += `┏❐ 《 *MAIN MENU* 》 ❐\n`;
-    menu += `┃├◆ .url\n┃├◆.tagall\n┃├◆ .yts\n┃├◆ .play\n┃├◆ .spotify\n┃├◆ .trt\n┃├◆ .alive\n┃├◆ .ping\n┃├◆ .apk\n┃├◆ .vv\n┃├◆ .video\n┃├◆ .song\n┃├◆ .music\n┃├◆ .ssweb\n┃├◆ .instagram\n┃├◆ .img\n┃├◆ .facebook\n┃├◆ .fatch\n┃├◆ .find\n┃├◆ .name\n┃├◆ .save\n┃├◆ .shazam\n┃├◆ .tiktok\n┃├◆ .ytmp4\n`;
-    menu += `┗❐\n\n`;
-
-    // Stick Menu
-    menu += `┏❐ 《 *STICKER MENU* 》 ❐\n`;
-    menu += `┃├◆ .blur\n┃├◆ .simage\n┃├◆ .sticker\n┃├◆ .tgsticker\n┃├◆ .meme\n┃├◆ .take\n┃├◆ .emojimix\n`;
-    menu += `┗❐\n\n`;
-
-    // Game Menu
-    menu += `┏❐ 《 *GAME MENU* 》 ❐\n`;
-    menu += `┃├◆ .tictactoe\n┃├◆ .hangman\n┃├◆ .guess\n┃├◆ .trivia\n┃├◆ .answer\n┃├◆ .truth\n┃├◆ .dare\n┃├◆ .8ball\n`;
-    menu += `┗❐\n\n`;
-
-    // GitHub Menu
-    menu += `┏❐ 《 *GITHUB CMD* 》 ❐\n`;
-    menu += `┃├◆ .git\n┃├◆ .github\n┃├◆ .sc\n┃├◆ .script\n┃├◆ .repo\n`;
-    menu += `┗❐\n${readmore}\n`;
-
-    // Maker Menu
-    menu += `┏❐ 《 *MAKER MENU* 》❐\n`;
-    menu += `┃├◆ .compliment\n┃├◆ .insult\n┃├◆ .flirt\n┃├◆ .shayari\n┃├◆ .goodnight\n┃├◆ .roseday\n┃├◆ .character\n┃├◆ .wasted\n┃├◆ .ship\n┃├◆ .simp\n┃├◆ .stupid\n`;
-    menu += `┗❐\n\n`;
-
-    // Anime Menu
-    menu += `┏❐ 《 *ANIME MENU* 》 ❐\n`;
-    menu += `┃├◆ .neko\n┃├◆ .waifu\n┃├◆.loli\n┃├◆ .nom\n┃├◆ .poke\n┃├◆ .cry\n┃├◆ .kiss\n┃├◆ .pat\n┃├◆ .hug\n┃├◆ .wink\n┃├◆ .facepalm\n`;
-    menu += `┗❐\n\n`;
-
-    // Text Maker Menu
-    menu += `┏❐ 《 *TEXT MAKER MENU* 》 ❐\n`;
-    menu += `┃├◆ .metallic\n┃├◆ .ice\n┃├◆ .snow\n┃├◆ .impressive\n┃├◆ .matrix\n┃├◆ .light\n┃├◆ .neon\n┃├◆ .devil\n┃├◆ .purple\n┃├◆ .thunder\n┃├◆ .leaves\n┃├◆ .1917\n┃├◆ .arena\n┃├◆ .hacker\n┃├◆ .sand\n┃├◆ .blackpink\n┃├◆ .glitch\n┃├◆ .fire\n`;
-    menu += `┗❐\n\n`;
-
-    // Image Edit Menu
-    menu += `┏❐ 《 *IMG EDIT* 》 ❐\n`;
-    menu += `┃├◆ .heart\n┃├◆ .horny\n┃├◆ .circle\n┃├◆ .lgbt\n┃├◆ .lolice\n┃├◆ .stupid\n┃├◆ .namecard\n┃├◆ .tweet\n┃├◆ .ytcomment\n┃├◆ .comrade\n┃├◆ .gay\n┃├◆ .glass\n┃├◆ .jail\n┃├◆ .passed\n┃├◆ .triggered\n`;
-    menu += `┗❐\n\n`;
-
-    //deploy Menu
-    menu += `┏❐ 《 *GUIDE MENU* 》 ❐\n`;
-    menu += `┃├◆ .tutorial\n┃├◆ .reportbug\n┃├◆ .ngl\n`
-    menu += `┗❐`
-    
     return menu;
 };
 
-// Helper function to safely load thumbnail
+// Helper function to safely load thumbnail (with URL support)
 async function loadThumbnail(thumbnailPath) {
     try {
-        if (fs.existsSync(thumbnailPath)) {
-            return fs.readFileSync(thumbnailPath);
-        } else {
-            console.log(`Thumbnail not found: ${thumbnailPath}, using fallback`);
-            // Create a simple 1x1 pixel buffer as fallback
-            return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+        // Handle URL thumbnails
+        if (thumbnailPath && (thumbnailPath.startsWith('http://') || thumbnailPath.startsWith('https://'))) {
+            try {
+                const fetch = require('node-fetch');
+                const response = await fetch(thumbnailPath);
+                if (response.ok) {
+                    return Buffer.from(await response.arrayBuffer());
+                }
+            } catch (urlError) {
+                console.error('URL thumbnail fetch failed:', urlError.message);
+            }
+            // Fall through to local file check if URL fails
         }
+        
+        // Handle local file thumbnails
+        if (thumbnailPath && fs.existsSync(thumbnailPath)) {
+            return fs.readFileSync(thumbnailPath);
+        }
+        
+        // Return fallback 1x1 transparent pixel
+        return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
     } catch (error) {
-        console.error('Error loading thumbnail:', error);
+        console.error('Error loading thumbnail:', error.message);
         // Return fallback buffer
         return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
     }
 }
 
-// Create fake contact for enhanced replies
-function createFakeContact(message) {
-    return {
-        key: {
-            participants: "0@s.whatsapp.net",
-            remoteJid: "status@broadcast",
-            fromMe: false,
-            id: "Smart project"
-        },
-        message: {
-            contactMessage: {
-                vcard: `BEGIN:VCARD\nVERSION:3.0\nN:Sy;Bot;;;\nFN: whatsapp bot\nitem1.TEL;waid=${message.key.participant?.split('@')[0] || message.key.remoteJid.split('@')[0]}:${message.key.participant?.split('@')[0] || message.key.remoteJid.split('@')[0]}\nitem1.X-ABLabel:Ponsel\nEND:VCARD`
-            }
-        },
-        participant: "0@s.whatsapp.net"
-    };
-}
-
-// YOUR EXACT MENU STYLE FUNCTION WITH FIXED tylorkids AND fkontak FOR ALL STYLES
+// ∆RY∆N-X ULUTRA menu style function (restored original branding)
 async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thumbnailBuffer, pushname) {
     const fkontak = createFakeContact(message);
     const botname = getBotName();
-    const ownername = getOwnerName();
+    const ownername = pushname;
     const tylorkids = thumbnailBuffer;
-    const plink = "https://github.com/aryankingkilalu/ARYAN-MD";
-
-    if (menustyle === '4') {
+    const plink = "https://github.com/vinpink2";
+    
+    if (menustyle === '1') {
         await sock.sendMessage(chatId, {
             document: {
                 url: "https://i.ibb.co/2W0H9Jq/avatar-contact.png",
@@ -226,11 +265,11 @@ async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thu
                     renderLargerThumbnail: true,
                 },
             },
-        }, { quoted: fkontak });
+        }, { quoted: createFakeContact(message) });
     } else if (menustyle === '2') {
         await sock.sendMessage(chatId, { 
             text: menulist 
-        }, { quoted: fkontak });
+        }, { quoted: createFakeContact(message) });
     } else if (menustyle === '3') {
         await sock.sendMessage(chatId, {
             text: menulist,
@@ -245,12 +284,12 @@ async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thu
                     renderLargerThumbnail: true,
                 },
             },
-        }, { quoted: fkontak });
-    } else if (menustyle === '1') {
+        }, { quoted: createFakeContact(message) });
+    } else if (menustyle === '4') {
         await sock.sendMessage(chatId, {
             image: tylorkids,
             caption: menulist,
-        }, { quoted: fkontak });
+        }, { quoted: createFakeContact(message) });
     } else if (menustyle === '5') {
         let massage = generateWAMessageFromContent(chatId, {
             viewOnceMessage: {
@@ -270,7 +309,7 @@ async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thu
                     },
                 },
             },
-        }, { quoted: fkontak });
+        }, { quoted: createFakeContact(message) });
         await sock.relayMessage(chatId, massage.message, { messageId: massage.key.id });
     } else if (menustyle === '6') {
         await sock.relayMessage(chatId, {
@@ -285,7 +324,6 @@ async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thu
                             mentionedJid: [message.key.participant || message.key.remoteJid],
                             externalAdReply: {
                                 showAdAttribution: false,
-                                thumbnail: tylorkids,
                             },
                         },
                     },
@@ -296,7 +334,7 @@ async function sendMenuWithStyle(sock, chatId, message, menulist, menustyle, thu
         // Default fallback
         await sock.sendMessage(chatId, { 
             text: menulist 
-        }, { quoted: fkontak });
+        }, { quoted: createFakeContact(message) });
     }
 }
 
@@ -307,71 +345,63 @@ async function helpCommand(sock, chatId, message) {
 
     console.log('Current menu style:', menuStyle);
 
-    let data = {};
-    try { data = JSON.parse(fs.readFileSync('./data/messageCount.json', 'utf8')); } catch { data = { isPublic: true }; try { fs.mkdirSync('./data', { recursive: true }); fs.writeFileSync('./data/messageCount.json', JSON.stringify(data)); } catch {} }
-    
     // Create fake contact for enhanced reply
     const fkontak = createFakeContact(message);
-    
+
     const start = Date.now();
     await sock.sendMessage(chatId, { 
-        text: '*loading ♻️ please wait?*' 
-    }, { quoted: fkontak });
+        text: '_Wait loading Menu..._' 
+    }, { quoted: createFakeContact(message) });
     const end = Date.now();
     const ping = Math.round((end - start) / 2);
 
+    // Send opening reaction
+    await sock.sendMessage(chatId, {
+        react: { text: '🪐', key: message.key }
+    });
+
     const uptimeInSeconds = process.uptime();
     const uptimeFormatted = formatTime(uptimeInSeconds);
-    const currentMode = data.isPublic ? 'public' : 'private';    
-    const hostName = detectHost();
+
+    let botModeData = { mode: 'public', isPublic: true };
+    try {
+        const modeFilePath = path.join(__dirname, '../data/messageCount.json');
+        const raw = JSON.parse(fs.readFileSync(modeFilePath, 'utf8'));
+        if (raw && raw.mode) botModeData = raw;
+    } catch (_) {}
+    const modeMap = { public: 'Public', private: 'Private', group: 'Group', pm: 'PM' };
+    const rawMode = (botModeData.mode || (botModeData.isPublic ? 'public' : 'private')).toLowerCase();
+    const currentMode = modeMap[rawMode] || rawMode.charAt(0).toUpperCase() + rawMode.slice(1);
+    const hostName = detectPlatform();
     
-    // Generate menu and apply watermark
-    let menulist = generateMenu(pushname, currentMode, hostName, ping, uptimeFormatted);
-    menulist = applyWatermark(menulist);
+    const menulist = generateMenu(pushname, currentMode, hostName, ping, uptimeFormatted);
 
-    // FIXED: Always use the custom menu image (menu.jpg) from assets folder
-    const customMenuImagePath = path.join(__dirname, '../assets', 'menu.jpg');
-    let thumbnailPath = customMenuImagePath;
-
-    // If the custom menu image doesn't exist, use fallback images
-    if (!fs.existsSync(customMenuImagePath)) {
-        const fallbackFiles = [
+    // Get custom menu image from settings
+    const { getMenuImage } = require('../lib/botConfig');
+    const customMenuImage = getMenuImage();
+    let thumbnailPath;
+    
+    if (customMenuImage) {
+        thumbnailPath = customMenuImage; // Can be URL or local path
+    } else {
+        // Random thumbnail selection from local files
+        const thumbnailFiles = [
             'menu1.jpg',
             'menu2.jpg', 
             'menu3.jpg',
             'menu4.jpg',
             'menu5.jpg'
         ];
-        
-        // Check for any existing fallback file
-        for (const fallbackFile of fallbackFiles) {
-            const fallbackPath = path.join(__dirname, '../assets', fallbackFile);
-            if (fs.existsSync(fallbackPath)) {
-                thumbnailPath = fallbackPath;
-                console.log(`Using fallback image: ${fallbackFile}`);
-                break;
-            }
-        }
-    } else {
-        console.log('Using custom menu image:', customMenuImagePath);
+        const randomThumbFile = thumbnailFiles[Math.floor(Math.random() * thumbnailFiles.length)];
+        thumbnailPath = path.join(__dirname, '../assets', randomThumbFile);
     }
-
-    // Send reaction
-    await sock.sendMessage(chatId, {
-        react: { text: '', key: message.key }
-    });
 
     try {
         // Load thumbnail using helper function
         const thumbnailBuffer = await loadThumbnail(thumbnailPath);
 
-        // Send menu using YOUR EXACT menu style function
+        // Send menu using JUNE-X BOT menu style function
         await sendMenuWithStyle(sock, chatId, message, menulist, menuStyle, thumbnailBuffer, pushname);
-
-        // Success reaction
-        await sock.sendMessage(chatId, {
-            react: { text: '', key: message.key }
-        });
 
     } catch (error) {
         console.error('Error in help command:', error);
@@ -379,7 +409,7 @@ async function helpCommand(sock, chatId, message) {
         try {
             await sock.sendMessage(chatId, { 
                 text: menulist 
-            }, { quoted: fkontak });
+            }, { quoted: createFakeContact(message) });
         } catch (fallbackError) {
             console.error('Even fallback failed:', fallbackError);
         }
@@ -387,4 +417,4 @@ async function helpCommand(sock, chatId, message) {
 }
 
 module.exports = helpCommand;
-    
+        
