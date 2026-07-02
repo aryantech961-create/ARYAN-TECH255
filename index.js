@@ -267,7 +267,7 @@ async function checkAndHandleSessionFormat() {
     
     if (sessionId && sessionId.trim() !== '') {
         // Only check if it's set and non-empty
-        if (!sessionId.trim().startsWith('JUNE-MD')) {
+        if (!sessionId.trim().startsWith('Aryan-X')) {
             log(chalk.white.bgRed('[ERROR]: Invalid SESSION_ID in .env'), 'white');
             log(chalk.white.bgRed('[SESSION ID] MUST start with "Aryan-x".'), 'white');
             log(chalk.white.bgRed('Cleaning .env and creating new one...'), 'white');
