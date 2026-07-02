@@ -6,9 +6,9 @@
 
 const settings = {
   packname: '✮⃝∆RYAN',
-  author: '✮⃝𝐒ᵘᵖʳᵉᵐᵉ',
-  botName: "∆RY∆N-𝐗 𝐛𝐨𝐭",
-  botOwner: '✮⃝𝐒ᵘᵖʳᵉᵐᵉ', // Your name
+  author: '✮⃝aryan',
+  botName: "∆RY∆N-𝐗 ulutra",
+  botOwner: '✮⃝aryan', // Your name
   ownerNumber: process.env.OWNER_NUMBER || '255772336533', //Set your number here without + symbol, just add country code & number without any space
   giphyApiKey: 'qnl7ssQChTdPjsKta2Ax2LMaGXz303tq',
   commandMode: "public",
