@@ -250,7 +250,7 @@ function sessionExists() {
 async function checkEnvSession() {
     const envSessionID = process.env.SESSION_ID;
     if (envSessionID) {
-        if (!envSessionID.includes("ARYAN-X:~")) { 
+        if (!envSessionID.includes("Aryan-X:~")) { 
             log("🚨 WARNING: Environment SESSION_ID is missing the required prefix 'ARYAN-X:~'. Assuming BASE64 format.", 'red'); 
         }
         global.SESSION_ID = envSessionID.trim();
