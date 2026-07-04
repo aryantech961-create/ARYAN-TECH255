@@ -1,22 +1,19 @@
 const moment = require('moment-timezone');
-const fetch = require('node-fetch');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
 const { createFakeContact } = require('../lib/fakeContact');
 
 async function githubCommand(sock, chatId, message) {
-    try {
-        const fkontak = createFakeContact(message);
+    const fkontak = createFakeContact(message);
 
+    try {
         const senderJid = (message.key.participant || message.key.remoteJid || '').replace(/:\d+/, '');
         const senderPhone = senderJid.split('@')[0];
-        const pushname = message.pushName || 'User';
 
         // Weka repo yako hapa
-        const res = await fetch('https://api.github.com/repos/aryankingkilalu/ARYAN-MD');
-        if (!res.ok) throw new Error('Error fetching repository data');
-        const json = await res.json();
+        const { data: json } = await axios.get('https://api.github.com/repos/aryankingkilalu/ARYAN-MD');
 
         let txt = `🔸 \`∆RY∆N-X REPOSITORY INFO\` 🔸\n\n`;
         txt += `🔹 *Name* : ${json.name}\n`;
@@ -33,22 +30,29 @@ async function githubCommand(sock, chatId, message) {
         txt += `🚀 Powered By ∆RY∆N-X TECH`;
 
         const imgPath = path.join(__dirname, '../assets/images.webp');
-        const imgBuffer = fs.readFileSync(imgPath);
+        const imgBuffer = fs.existsSync(imgPath) ? fs.readFileSync(imgPath) : null;
 
-        await sock.sendMessage(chatId, {
-            image: imgBuffer,
+        const messagePayload = {
             caption: txt,
             mentions: [senderJid],
             contextInfo: {
                 forwardingScore: 1,
                 isForwarded: false,
                 forwardedNewsletterMessageInfo: {
-                    newsletterJid: '@newsletter',
+                    newsletterJid: '120363XXXXXXXXXX@newsletter', // replace with your real newsletter JID
                     newsletterName: '∆RY∆N-X OFFICIAL',
                     serverMessageId: -1
                 }
             }
-        }, { quoted: fkontak });
+        };
+
+        if (imgBuffer) {
+            messagePayload.image = imgBuffer;
+            await sock.sendMessage(chatId, messagePayload, { quoted: fkontak });
+        } else {
+            const { image, ...textOnlyPayload } = messagePayload;
+            await sock.sendMessage(chatId, { text: txt, ...textOnlyPayload }, { quoted: fkontak });
+        }
 
         await sock.sendMessage(chatId, {
             react: { text: '✔️', key: message.key }
@@ -57,7 +61,7 @@ async function githubCommand(sock, chatId, message) {
     } catch (error) {
         await sock.sendMessage(chatId, {
             text: '❌ Error fetching repository information.'
-        }, { quoted: createFakeContact(message) });
+        }, { quoted: fkontak });
     }
 }
 
