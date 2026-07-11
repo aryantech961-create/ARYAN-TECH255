@@ -1,5 +1,7 @@
-const moment = require('moment-timezone');
-const fetch = require('node-fetch');
+const moment = require("moment-timezone");
+const fetch = require("node-fetch");
+const fs = require("fs");
+const path = require("path");
 
 async function githubCommand(sock, chatId, message) {
 
@@ -15,7 +17,7 @@ function createFakeContact(message) {
             contactMessage: {
                 vcard: `BEGIN:VCARD
 VERSION:3.0
-N:Sy;Bot;;;
+N:Bot;;;; 
 FN:∆RY∆N-X ULTRA
 END:VCARD`
             }
@@ -30,24 +32,45 @@ try {
 
     const res = await fetch("https://api.github.com/repos/aryankingkilalu/ARYAN-MD");
 
-    if (!res.ok) throw new Error("GitHub API Error");
+    if (!res.ok) {
+        throw new Error(`GitHub API Error: ${res.status}`);
+    }
 
     const json = await res.json();
 
-    let txt = `🚀 *∆RY∆N-X ULTRA REPO INFO*\n\n`;
-    txt += `◦ *Name:* ${json.name}\n`;
-    txt += `◦ *Stars:* ${json.stargazers_count}\n`;
-    txt += `◦ *Forks:* ${json.forks_count}\n`;
-    txt += `◦ *Watchers:* ${json.watchers_count}\n`;
-    txt += `◦ *Size:* ${(json.size / 1024).toFixed(2)} MB\n`;
-    txt += `◦ *Updated:* ${moment(json.updated_at).format("DD/MM/YYYY HH:mm")}\n`;
-    txt += `◦ *Repo:* ${json.html_url}\n\n`;
-    txt += `*Description:*\n${json.description || "No description"}\n\n`;
-    txt += `Hey ${pushname}, thanks for using ∆RY∆N-X ULTRA ❤️`;
+    const txt = `🚀 *∆RY∆N-X ULTRA REPO INFO*
 
-    await sock.sendMessage(chatId, {
-        text: txt
-    }, { quoted: fkontak });
+◦ *Name:* ${json.name}
+◦ *Stars:* ${json.stargazers_count}
+◦ *Forks:* ${json.forks_count}
+◦ *Watchers:* ${json.watchers_count}
+◦ *Size:* ${(json.size / 1024).toFixed(2)} MB
+◦ *Updated:* ${moment(json.updated_at).format("DD/MM/YYYY HH:mm")}
+◦ *Repo:* ${json.html_url}
+
+*Description:*
+${json.description || "No description"}
+
+Hey ${pushname}, Thanks for using ∆RY∆N-X ULTRA ❤️`;
+
+    const imgPath = path.join(__dirname, "../assets/menu3.jpg");
+
+    if (fs.existsSync(imgPath)) {
+        const img = fs.readFileSync(imgPath);
+
+        await sock.sendMessage(chatId, {
+            image: img,
+            caption: txt
+        }, {
+            quoted: fkontak
+        });
+    } else {
+        await sock.sendMessage(chatId, {
+            text: txt
+        }, {
+            quoted: fkontak
+        });
+    }
 
     await sock.sendMessage(chatId, {
         react: {
@@ -56,13 +79,16 @@ try {
         }
     });
 
-} catch (err) {
-    console.log(err);
+} catch (error) {
+    console.error("REPO ERROR:", error);
 
     await sock.sendMessage(chatId, {
-        text: "❌ Repository not found or GitHub API failed."
-    }, { quoted: message });
+        text: `❌ ${error.message}`
+    }, {
+        quoted: message
+    });
 }
+
 }
 
 module.exports = githubCommand;
