@@ -7,7 +7,7 @@ const isOwnerOrSudo = require('../lib/isOwner'); // ✅ corrected path
 const MENU_SETTINGS_FILE = path.join(__dirname, '..', 'data', 'menuSettings.json');
 
 // Default menu style
-const DEFAULT_MENU_STYLE = '4';
+const DEFAULT_MENU_STYLE = '1';
 
 // Menu style descriptions
 const MENU_STYLES = {
