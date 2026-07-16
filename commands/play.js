@@ -13,8 +13,8 @@ async function playCommand(sock, chatId, message) {
                 text: "What song do you want to download?"
             }, { quoted: fakekontak });
         }
-        //react
-                await sock.sendMessage(chatId, {
+
+        await sock.sendMessage(chatId, {
             react: { text: "🎼", key: message.key }
         });
 
@@ -26,29 +26,27 @@ async function playCommand(sock, chatId, message) {
             }, { quoted: fakekontak });
         }
 
-        // Get the first video result
         const video = videos[0];
         const urlYt = video.url;
-        const title = video.title; // ✅ Title from yt-search
+        const title = video.title;
 
-        // Notify user about download
         await sock.sendMessage(chatId, { 
             text: `_Downloading 🎵_\n_${title} 🎶_`
         }, { quoted: fakekontak });
 
-        // Fetch audio data from API
-        const response = await axios.get(`https://apiskeith.top/download/audio?url=${urlYt}`);
+        // 🔥 NEW IP FROM SECOND FILE
+        const apiUrl = `https://yt-dl.officialhectormanuel.workers.dev/?url=${encodeURIComponent(urlYt)}`;
+        const response = await axios.get(apiUrl);
         const data = response.data;
 
-        if (!data || !data.status) {
+        if (!data || !data.status || !data.audio) {
             return await sock.sendMessage(chatId, { 
                 text: "Failed to fetch audio from the API. Please try again later."
             }, { quoted: fakekontak });
         }
 
-        const audioUrl = data.result; // ✅ API returns only the download URL
+        const audioUrl = data.audio;
 
-        // Send as document
         await sock.sendMessage(chatId, {
             document: { url: audioUrl },
             mimetype: "audio/mpeg",
