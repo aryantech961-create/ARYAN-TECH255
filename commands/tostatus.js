@@ -47,7 +47,8 @@ async function tostatusGroupCommand(sock, chatId, message) {
                 const buffer = await getBuffer();
                 await sock.sendMessage(chatId, {
                     image: buffer,
-                    caption: caption || quoted.imageMessage?.caption || ''
+                    caption: caption || quoted.imageMessage?.caption || '',
+                    mimetype: quoted.imageMessage?.mimetype || 'image/jpeg'
                 }, { quoted: fake });
                 return await sock.sendMessage(chatId, { text: '✅ Image posted to group.' }, { quoted: fake });
             }
@@ -56,7 +57,8 @@ async function tostatusGroupCommand(sock, chatId, message) {
                 const buffer = await getBuffer();
                 await sock.sendMessage(chatId, {
                     video: buffer,
-                    caption: caption || quoted.videoMessage?.caption || ''
+                    caption: caption || quoted.videoMessage?.caption || '',
+                    mimetype: quoted.videoMessage?.mimetype || 'video/mp4'
                 }, { quoted: fake });
                 return await sock.sendMessage(chatId, { text: '✅ Video posted to group.' }, { quoted: fake });
             }
